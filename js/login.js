@@ -8,12 +8,15 @@ loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const formData = new FormData(loginForm);
-  await loginAdmin({
-    username: String(formData.get("username") || ""),
-    password: String(formData.get("password") || "")
-  });
-
-  window.location.href = "../pages/dashboard.html";
+  try {
+    await loginAdmin({
+      username: String(formData.get("username") || ""),
+      password: String(formData.get("password") || "")
+    });
+    window.location.href = "pages/dashboard.html";
+  } catch {
+    // Error already shown in authService via alert
+  }
 });
 
 passwordToggle.addEventListener("click", () => {
