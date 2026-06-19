@@ -1,10 +1,34 @@
-const CACHE = "ows-v1";
+const CACHE = "ows-v2";
 const STATIC = [
   "/",
   "/css/main.css",
   "/css/login.css",
+  "/pages/dashboard.html",
+  "/pages/add-book.html",
+  "/pages/lending.html",
+  "/pages/book-list.html",
   "/js/login.js",
-  "/assets/logo_192 (2).png"
+  "/js/pages/dashboard.js",
+  "/js/pages/addBook.js",
+  "/js/pages/bookList.js",
+  "/js/pages/lending.js",
+  "/js/state/store.js",
+  "/js/services/firebase.js",
+  "/js/services/firestoreService.js",
+  "/js/components/layout.js",
+  "/js/components/charts.js",
+  "/js/components/modal.js",
+  "/js/components/notifications.js",
+  "/js/components/profileMenu.js",
+  "/js/utils/bookOptions.js",
+  "/js/utils/html.js",
+  "/assets/logo_192 (2).png",
+  "/assets/bell.png",
+  "/assets/home.png",
+  "/assets/book-plus.png",
+  "/assets/book-open-cover.png",
+  "/assets/list.png",
+  "/assets/print.png"
 ];
 
 self.addEventListener("install", (e) => {

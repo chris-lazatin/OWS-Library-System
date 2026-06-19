@@ -1,9 +1,10 @@
 import { renderAppLayout } from "../components/layout.js";
+import { openConfirmationModal } from "../components/confirmationModal.js";
 import { openModal } from "../components/modal.js";
-import { addBorrowRecord, deleteBorrowRecord, getState, subscribe, updateBorrowStatus } from "../state/store.js";
+import { addBorrowRecord, deleteBorrowRecord, getState, initStore, subscribe, updateBorrowStatus } from "../state/store.js";
+import { renderBookTitle } from "../utils/bookDisplay.js";
 import { escapeHtml } from "../utils/html.js";
-import { initStore } from "../state/store.js";
-await initStore();
+
 
 const statuses = ["Borrowed", "Returned", "For Replacement"];
 const pageState = {
@@ -90,11 +91,13 @@ tableBody.addEventListener("click", (event) => {
     return;
   }
 
-  deleteBorrowRecord(deleteButton.dataset.recordId);
+  openDeleteBorrowRecordModal(deleteButton.dataset.recordId);
 });
 
-subscribe(renderBorrowTable);
-renderBorrowTable();
+initStore().then(() => {
+  subscribe(renderBorrowTable);
+  renderBorrowTable();
+});
 
 function renderBorrowTable() {
   const records = getFilteredRecords();
@@ -111,7 +114,7 @@ function getFilteredRecords() {
       record.studentInfo,
       record.dateBorrowed,
       record.status,
-      ...record.books.flatMap((book) => [book.title, book.callNumber])
+      ...record.books.flatMap((book) => [book.title, book.callNumber, book.responsibility])
     ].join(" ").toLowerCase();
 
     const matchesSearch = !pageState.search || searchableText.includes(pageState.search);
@@ -128,7 +131,7 @@ function renderBorrowRow(record) {
     <tr>
       <td><strong>${escapeHtml(record.borrowerName)}</strong></td>
       <td>${escapeHtml(record.studentInfo)}</td>
-      <td>${record.books.map((book) => `${escapeHtml(book.title)} (${book.quantity})`).join("<br>")}</td>
+      <td>${record.books.map((book) => `${renderBookTitle(resolveBorrowedBook(book))} (${book.quantity})`).join("<br>")}</td>
       <td>${record.books.map((book) => escapeHtml(book.callNumber || "Unassigned")).join("<br>")}</td>
       <td>${totalQuantity}</td>
       <td>${escapeHtml(record.dateBorrowed)}</td>
@@ -142,6 +145,31 @@ function renderBorrowRow(record) {
       </td>
     </tr>
   `;
+}
+
+function resolveBorrowedBook(book) {
+  if (book.volumeCopy) {
+    return book;
+  }
+
+  const catalogBook = getState().books.find((item) => item.id === book.bookId)
+    || getState().archivedBooks.find((item) => item.id === book.bookId);
+  return catalogBook ? { ...book, volumeCopy: catalogBook.volumeCopy || "" } : book;
+}
+
+function openDeleteBorrowRecordModal(recordId) {
+  const record = getState().borrowRecords.find((item) => item.id === recordId);
+  if (!record) {
+    return;
+  }
+
+  openConfirmationModal({
+    title: "Delete Lending Record",
+    heading: "Delete this lending record?",
+    message: `${record.borrowerName || "This borrower"}'s lending record will be removed only after confirmation.`,
+    confirmLabel: "Confirm",
+    onConfirm: () => deleteBorrowRecord(recordId)
+  });
 }
 
 function getStatusClass(status) {
@@ -254,7 +282,7 @@ function openBookSelectionModal(selectedBooksDisplay) {
       return `
         <button class="book-option ${selected ? "is-selected" : ""}" type="button" data-book-id="${escapeHtml(book.id)}">
           <span>
-            <strong>${escapeHtml(book.title)}</strong>
+            <strong>${renderBookTitle(book)}</strong>
             <small>${escapeHtml(book.callNumber || "No call number")}</small>
           </span>
           <span class="quantity-badge">${selected ? selected.quantity : 0}</span>
@@ -279,6 +307,7 @@ function openBookSelectionModal(selectedBooksDisplay) {
     draftSelection.set(book.id, {
       bookId: book.id,
       title: book.title,
+      volumeCopy: book.volumeCopy || "",
       callNumber: book.callNumber || "Unassigned",
       quantity: currentSelection ? currentSelection.quantity + 1 : 1
     });
@@ -300,7 +329,7 @@ function renderSelectedBooks(container) {
   container.innerHTML = books.length
     ? books.map((book) => `
       <span class="chip">
-        ${escapeHtml(book.title)} <strong>x${book.quantity}</strong>
+        ${renderBookTitle(book)} <strong>x${book.quantity}</strong>
         <button type="button" data-remove-book data-book-id="${escapeHtml(book.bookId)}" aria-label="Remove ${escapeHtml(book.title)}">x</button>
       </span>
     `).join("")

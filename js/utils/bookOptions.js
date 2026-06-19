@@ -20,7 +20,7 @@ export const bookFieldGroups = [
     title: "Title Proper",
     fields: [
       { label: "Title", name: "title", required: true },
-      { label: "Author", name: "responsibility", required: true },
+      { label: "Author/Responsibility", name: "responsibility", required: true },
       { label: "Added Entry: Corporate", name: "corporateEntry" }
     ]
   },
@@ -30,8 +30,9 @@ export const bookFieldGroups = [
       { label: "Place", name: "place" },
       { label: "Publisher", name: "publisher", required: true },
       { label: "Year", name: "publicationDate", type: "number", required: true },
-      { label: "Extent/Dimension", name: "extent" },
-      { label: "ISBN", name: "isbn", required: true },
+      { label: "Height (cm)", name: "height" },
+      { label: "Width (cm)", name: "width" },
+      { label: "ISBN", name: "isbn" },
       { label: "URL", name: "url", type: "url" }
     ]
   },
@@ -42,11 +43,11 @@ export const bookFieldGroups = [
       { label: "Accession", name: "accession" },
       { label: "Language", name: "language" },
       { label: "Entered By", name: "enteredBy" },
-      { label: "Date Entered", name: "dateEntered", type: "date" },
       { label: "Updated By", name: "updatedBy" },
-      { label: "Date Updated", name: "dateUpdated", type: "date" },
-      { label: "Volume/Copy", name: "volumeCopy" },
-      { label: "On Shelf", name: "onShelf", type: "number", required: true },
+      { label: "Volume", name: "volumeCopy", placeholder: "e.g. \"1\"" },
+      { label: "Edition", name: "edition" },
+      { label: "Page", name: "pages", type: "number" },
+      { label: "Copy", name: "onShelf", type: "number", required: true },
       { label: "ID", name: "recordId" }
     ]
   }

@@ -2,7 +2,6 @@ import { renderAppLayout } from "../components/layout.js";
 import { renderDashboardCharts } from "../components/charts.js";
 import { getState, initStore, subscribe } from "../state/store.js";
 
-await initStore();
 
 renderAppLayout({
   activePage: "dashboard",
@@ -20,7 +19,7 @@ renderAppLayout({
         <p id="totalBooks" class="stat-value">0</p>
       </article>
       <article class="stat-card">
-        <p class="stat-label">Total Borrow Records</p>
+        <p class="stat-label">Borrow Records</p>
         <p id="totalBorrowRecords" class="stat-value">0</p>
       </article>
     </section>
@@ -55,5 +54,7 @@ function renderDashboard() {
   });
 }
 
-subscribe(renderDashboard);
-renderDashboard();
+initStore().then(() => {
+  subscribe(renderDashboard);
+  renderDashboard();
+});

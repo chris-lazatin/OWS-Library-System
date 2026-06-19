@@ -1,9 +1,15 @@
 import { renderAppLayout } from "../components/layout.js";
 import { openModal } from "../components/modal.js";
-import { addBook } from "../state/store.js";
+import { addBook, initStore } from "../state/store.js";
+import {
+  renderBookChoice,
+  renderBookField,
+  resetBookFormValidation,
+  setupBookFormValidation,
+  setupEnterToAdvance,
+  validateBookForm
+} from "../utils/bookForm.js";
 import { categoryOptions, locationOptions } from "../utils/bookOptions.js";
-import { initStore } from "../state/store.js";
-await initStore();
 
 renderAppLayout({
   activePage: "add-book",
@@ -11,7 +17,7 @@ renderAppLayout({
     <header class="page-header">
       <div>
         <h2>Add New Book</h2>
-        <p>Catalog entry form structured for future database integration.</p>
+        <p>Book Cataloging, recording the physical attributes and publishing details of a book.</p>
       </div>
     </header>
 
@@ -19,50 +25,51 @@ renderAppLayout({
       <section class="form-section" aria-labelledby="titleProperHeading">
         <h3 id="titleProperHeading">Title Proper</h3>
         <div class="form-grid">
-          ${renderField("Title", "titleProper", "text", true)}
-          ${renderField("Author/Responsibility", "responsibility", "text", true)}
-          ${renderField("Added Entry: Corporate", "corporateEntry")}
+          ${renderBookField("Title", "titleProper", "text", true)}
+          ${renderBookField("Author/Responsibility", "responsibility", "text", true)}
+          ${renderBookField("Added Entry: Corporate", "corporateEntry")}
         </div>
       </section>
 
       <section class="form-section" aria-labelledby="publicationHeading">
         <h3 id="publicationHeading">Publication</h3>
         <div class="form-grid">
-          ${renderField("Place", "place")}
-          ${renderField("Publisher", "publisher", "text", true)}
-          ${renderField("Year", "publicationDate", "number", true)}
-          ${renderField("Extent/Dimension", "extent")}
-          ${renderField("ISBN", "isbn", "text", true)}
-          ${renderField("URL", "url", "url")}
+          ${renderBookField("Place", "place")}
+          ${renderBookField("Publisher", "publisher", "text", true)}
+          ${renderBookField("Year", "publicationDate", "number", true)}
+          ${renderBookField("Height (cm)", "height")}
+          ${renderBookField("Width (cm)", "width")}
+          ${renderBookField("ISBN", "isbn", "text")}
+          ${renderBookField("URL", "url", "url")}
         </div>
       </section>
 
       <section class="form-section" aria-labelledby="localInfoHeading">
         <h3 id="localInfoHeading">Local Information</h3>
         <div class="form-grid">
-          ${renderField("Call Number", "callNumber", "text", true)}
-          ${renderField("Accession", "accession")}
-          ${renderField("Language", "language")}
-          ${renderField("Entered By", "enteredBy")}
-          ${renderField("Date Entered", "dateEntered", "date")}
-          ${renderField("Updated By", "updatedBy")}
-          ${renderField("Date Updated", "dateUpdated", "date")}
-          ${renderField("Volume/Copy", "volumeCopy")}
-          ${renderField("On Shelf", "onShelf", "number", true)}
-          ${renderField("ID", "recordId")}
+          ${renderBookField("Call Number", "callNumber", "text", true)}
+          ${renderBookField("Accession", "accession")}
+          ${renderBookField("Language", "language")}
+          ${renderBookField("Entered By", "enteredBy")}
+          ${renderBookField("Updated By", "updatedBy")}
+          ${renderBookField("Volume", "volumeCopy", "text", false, "", "", { placeholder: "e.g. \"1\"" })}
+          ${renderBookField("Edition", "edition")}
+          ${renderBookField("Page", "pages", "number")}
+          ${renderBookField("Copy", "onShelf", "number", true)}
+          ${renderBookField("ID", "recordId")}
         </div>
 
         <div class="choice-block">
           <span class="choice-label">Library/Location</span>
           <div class="choice-group" role="radiogroup" aria-label="Library location">
-            ${locationOptions.map((option, index) => renderChoice("location", option, index === 0, "oval-choice")).join("")}
+            ${locationOptions.map((option, index) => renderBookChoice("location", option, index === 0, "oval-choice")).join("")}
           </div>
         </div>
 
         <div class="choice-block">
           <span class="choice-label">Categories</span>
           <div class="choice-group category-choice-group" role="radiogroup" aria-label="Book category">
-            ${categoryOptions.map((option, index) => renderChoice("category", option, index === 0, "pill-choice")).join("")}
+            ${categoryOptions.map((option, index) => renderBookChoice("category", option, index === 0, "pill-choice")).join("")}
           </div>
         </div>
       </section>
@@ -75,32 +82,14 @@ renderAppLayout({
 });
 
 const form = document.getElementById("addBookForm");
-const focusableFields = Array.from(form.querySelectorAll("input:not([type='radio']), button.form-submit"));
-
-form.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter" || !event.target.matches("input:not([type='radio'])")) {
-    return;
-  }
-
-  event.preventDefault();
-  const currentIndex = focusableFields.indexOf(event.target);
-  const nextField = focusableFields[currentIndex + 1];
-  if (nextField) {
-    nextField.focus();
-  }
-});
-
-form.addEventListener("input", (event) => {
-  const field = event.target.closest("input");
-  if (field) {
-    clearFieldError(field);
-  }
-});
+setupEnterToAdvance(form, "button.form-submit");
+setupBookFormValidation(form);
+initStore();
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
-  if (!validateRequiredFields()) {
+  if (!validateBookForm(form)) {
     return;
   }
 
@@ -114,22 +103,23 @@ form.addEventListener("submit", async (event) => {
     place: String(formData.get("place") || ""),
     publisher: String(formData.get("publisher") || ""),
     publicationDate: String(formData.get("publicationDate") || ""),
-    extent: String(formData.get("extent") || ""),
+    height: String(formData.get("height") || ""),
+    width: String(formData.get("width") || ""),
     isbn: String(formData.get("isbn") || ""),
     url: String(formData.get("url") || ""),
     callNumber: String(formData.get("callNumber") || ""),
     accession: String(formData.get("accession") || ""),
     language: String(formData.get("language") || ""),
     enteredBy: String(formData.get("enteredBy") || ""),
-    dateEntered: String(formData.get("dateEntered") || ""),
     updatedBy: String(formData.get("updatedBy") || ""),
-    dateUpdated: String(formData.get("dateUpdated") || ""),
     volumeCopy: String(formData.get("volumeCopy") || ""),
+    edition: String(formData.get("edition") || ""),
+    pages: String(formData.get("pages") || ""),
     onShelf: Number(formData.get("onShelf") || 1),
     recordId: String(formData.get("recordId") || ""),
     location: String(formData.get("location") || locationOptions[0]),
     category: String(formData.get("category") || categoryOptions[0]),
-    addedAt: new Date().toISOString().slice(0, 10)
+    addedAt: new Date().toISOString()
   });
 
   form.reset();
@@ -137,33 +127,10 @@ form.addEventListener("submit", async (event) => {
   showSuccessModal();
 });
 
-function renderField(label, name, type = "text", required = false) {
-  return `
-    <div class="field-group">
-      <label for="${name}">${label}</label>
-      <input id="${name}" name="${name}" type="${type}" ${required ? "required" : ""} ${name === "publicationDate" ? 'min="0"' : ""} ${name === "onShelf" ? 'min="0"' : ""}>
-      <span class="field-error" aria-live="polite"></span>
-    </div>
-  `;
-}
-
-function renderChoice(name, value, checked, className) {
-  const id = `${name}-${value.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-  return `
-    <label class="${className} choice-color-${slugify(value)}">
-      <input type="radio" name="${name}" id="${id}" value="${value}" ${checked ? "checked" : ""}>
-      <span>${value}</span>
-    </label>
-  `;
-}
-
 function resetDefaultChoices() {
   form.querySelector("input[name='location']").checked = true;
   form.querySelector("input[name='category']").checked = true;
-  form.querySelectorAll(".field-group.has-error").forEach((group) => group.classList.remove("has-error"));
-  form.querySelectorAll(".field-error").forEach((error) => {
-    error.textContent = "";
-  });
+  resetBookFormValidation(form);
 }
 
 function showSuccessModal() {
@@ -180,54 +147,4 @@ function showSuccessModal() {
   });
 
   window.setTimeout(() => modal.close(), 2000);
-}
-
-function validateRequiredFields() {
-  const requiredFields = Array.from(form.querySelectorAll("input[required]"));
-  let firstInvalidField = null;
-
-  requiredFields.forEach((field) => {
-    const value = String(field.value || "").trim();
-    const isInvalid = !value || (field.type === "number" && Number(value) < 0);
-
-    if (isInvalid) {
-      showFieldError(field, "This field is required.");
-      firstInvalidField ||= field;
-    } else {
-      clearFieldError(field);
-    }
-  });
-
-  const location = form.querySelector("input[name='location']:checked");
-  const category = form.querySelector("input[name='category']:checked");
-  if (!location || !category) {
-    firstInvalidField ||= form.querySelector("input[name='location'], input[name='category']");
-  }
-
-  if (firstInvalidField) {
-    firstInvalidField.focus();
-    return false;
-  }
-
-  return true;
-}
-
-function showFieldError(field, message) {
-  const group = field.closest(".field-group");
-  group.classList.add("has-error");
-  group.querySelector(".field-error").textContent = message;
-}
-
-function clearFieldError(field) {
-  const group = field.closest(".field-group");
-  if (!group) return;
-  group.classList.remove("has-error");
-  const error = group.querySelector(".field-error");
-  if (error) {
-    error.textContent = "";
-  }
-}
-
-function slugify(value) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }

@@ -23,7 +23,8 @@ export async function fetchBooks(lastDoc = null, pageSize = 50) {
 export async function saveBook(bookData) {
   const payload = {
     ...bookData,
-    addedAt: bookData.addedAt || today()
+    addedAt: bookData.addedAt || new Date().toISOString(),
+    archived: Boolean(bookData.archived)
   };
 
   const docRef = await addDoc(collection(db, "books"), payload);
@@ -32,6 +33,20 @@ export async function saveBook(bookData) {
 
 export async function editBook(bookId, bookData) {
   await updateDoc(doc(db, "books", bookId), bookData);
+}
+
+export async function archiveBookRecord(bookId, archivedAt) {
+  await updateDoc(doc(db, "books", bookId), {
+    archived: true,
+    archivedAt
+  });
+}
+
+export async function restoreBookRecord(bookId, restoredAt) {
+  await updateDoc(doc(db, "books", bookId), {
+    archived: false,
+    restoredAt
+  });
 }
 
 export async function removeBook(bookId) {
@@ -69,13 +84,18 @@ export async function fetchNotifications() {
   return snapshot.docs.map((notificationDoc) => ({ id: notificationDoc.id, ...notificationDoc.data() }));
 }
 
+export async function fetchAllNotifications() {
+  const snapshot = await getDocs(query(collection(db, "notifications"), orderBy("createdAtValue", "desc")));
+  return snapshot.docs.map((notificationDoc) => ({ id: notificationDoc.id, ...notificationDoc.data() }));
+}
+
 export async function saveNotification(notificationData) {
   const docRef = await addDoc(collection(db, "notifications"), notificationData);
   return { id: docRef.id, ...notificationData };
 }
 
 export async function markAllNotificationsRead() {
-  const snapshot = await getDocs(query(collection(db, "notifications"), orderBy("createdAtValue", "desc"), limit(10)));
+  const snapshot = await getDocs(query(collection(db, "notifications"), orderBy("createdAtValue", "desc")));
   await Promise.all(snapshot.docs.map((notificationDoc) =>
     updateDoc(doc(db, "notifications", notificationDoc.id), { read: true })
   ));
@@ -88,7 +108,7 @@ export function subscribeToBooks(callback) {
 }
 
 export function subscribeToLendings(callback) {
-  return onSnapshot(query(collection(db, "lendings"), orderBy("borrowedAt", "desc")), (snapshot) => {
+  return onSnapshot(query(collection(db, "lendings"), orderBy("borrowedAt", "desc"), limit(100)), (snapshot) => {
     callback(snapshot.docs.map((recordDoc) => ({ id: recordDoc.id, ...recordDoc.data() })));
   });
 }

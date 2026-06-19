@@ -5,12 +5,14 @@ const navItems = [
   { id: "dashboard", label: "Dashboard", href: "dashboard.html", icon: "home.png" },
   { id: "add-book", label: "Add New Book", href: "add-book.html", icon: "book-plus.png" },
   { id: "lending", label: "Book Lending", href: "lending.html", icon: "book-open-cover.png" },
-  { id: "book-list", label: "Book List", href: "book-list.html", icon: "list.png" }
+  { id: "book-list", label: "Book List", href: "book-list.html", icon: "list.png" },
+  { id: "book-archive", label: "Book Archive", href: "book-archive.html", icon: "bookstorage.png" }
 ];
 
 const printPages = {
   dashboard: "dashboard-print.html",
-  "book-list": "book-list-print.html"
+  "book-list": "book-list-print.html",
+  "book-archive": "book-archive-print.html"
 };
 
 export function renderAppLayout({ activePage, content }) {

@@ -1,23 +1,28 @@
 import { renderAppLayout } from "../components/layout.js";
+import { openConfirmationModal } from "../components/confirmationModal.js";
 import { openModal } from "../components/modal.js";
-import { deleteBook, getState, subscribe, updateBook } from "../state/store.js";
+import { archiveBook, getState, initStore, subscribe, updateBook } from "../state/store.js";
+import { filterBooks, formatDateForDisplay, getArrangementOptions, sortBooks } from "../utils/bookFilters.js";
+import { paginateItems, renderPaginationControls } from "../utils/pagination.js";
+import {
+  renderBookChoice,
+  renderBookField,
+  setupBookFormValidation,
+  setupEnterToAdvance,
+  validateBookForm
+} from "../utils/bookForm.js";
 import { bookFieldGroups, categoryOptions, locationOptions } from "../utils/bookOptions.js";
+import { renderBookTitle } from "../utils/bookDisplay.js";
 import { escapeHtml } from "../utils/html.js";
-import { initStore } from "../state/store.js";
-await initStore();
 
-const arrangementOptions = [
-  { value: "date", label: "Date Added" },
-  { value: "newest", label: "Newest to Oldest" },
-  { value: "oldest", label: "Oldest to Newest" },
-  { value: "alpha", label: "Alphabetical" }
-];
+const arrangementOptions = getArrangementOptions();
 
 const pageState = {
   search: "",
   category: "",
   location: "",
-  arrangement: "date"
+  arrangement: "date",
+  currentPage: 1
 };
 
 renderAppLayout({
@@ -33,7 +38,7 @@ renderAppLayout({
     <section class="toolbar book-list-toolbar" aria-label="Book list tools">
       <label class="search-box">
         <span class="sr-only">Search books</span>
-        <input id="bookSearch" type="search" placeholder="Search title or call number...">
+        <input id="bookSearch" type="search" placeholder="Search title, Author, or Call number...">
       </label>
       <label class="filter-box">
         <span class="sr-only">Filter by category</span>
@@ -70,7 +75,7 @@ renderAppLayout({
               <th>ISBN</th>
               <th>Location</th>
               <th>Category</th>
-              <th>On Shelf</th>
+              <th>Copy</th>
               <th>Date Added / Date Edited</th>
               <th>Actions</th>
             </tr>
@@ -78,6 +83,7 @@ renderAppLayout({
           <tbody id="bookTableBody"></tbody>
         </table>
       </div>
+      <footer id="bookPagination" class="table-pagination" aria-label="Book list pagination"></footer>
     </section>
   `
 });
@@ -94,86 +100,80 @@ document.querySelector('a[href="book-list-print.html"]').addEventListener("click
 });
 
 const tableBody = document.getElementById("bookTableBody");
+const paginationMount = document.getElementById("bookPagination");
 
 document.getElementById("bookSearch").addEventListener("input", debounce((event) => {
   pageState.search = event.target.value.trim().toLowerCase();
+  resetCurrentPage();
   renderBookTable();
 }, 180));
 
 document.getElementById("categoryFilter").addEventListener("change", (event) => {
   pageState.category = event.target.value;
+  resetCurrentPage();
   renderBookTable();
 });
 
 document.getElementById("locationFilter").addEventListener("change", (event) => {
   pageState.location = event.target.value;
+  resetCurrentPage();
   renderBookTable();
 });
 
 document.getElementById("arrangementSelect").addEventListener("change", (event) => {
   pageState.arrangement = event.target.value;
+  resetCurrentPage();
+  renderBookTable();
+});
+
+paginationMount.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-pagination-action]");
+  if (!button) {
+    return;
+  }
+
+  pageState.currentPage += button.dataset.paginationAction === "next" ? 1 : -1;
   renderBookTable();
 });
 
 tableBody.addEventListener("click", (event) => {
   const editButton = event.target.closest("[data-edit-book]");
-  const deleteButton = event.target.closest("[data-delete-book]");
+  const archiveButton = event.target.closest("[data-archive-book]");
 
   if (editButton) {
     openEditBookModal(editButton.dataset.bookId);
     return;
   }
 
-  if (deleteButton) {
-    deleteBook(deleteButton.dataset.bookId);
+  if (archiveButton) {
+    openArchiveBookModal(archiveButton.dataset.bookId);
   }
 });
 
-subscribe(renderBookTable);
-renderBookTable();
+initStore().then(() => {
+  subscribe(renderBookTable);
+  renderBookTable();
+});
 
 function renderBookTable() {
   const books = getFilteredBooks();
+  const { items: visibleBooks, pagination } = paginateItems(books, pageState.currentPage);
+  pageState.currentPage = pagination.currentPage;
 
-  tableBody.innerHTML = books.length
-    ? books.map(renderBookRow).join("")
+  tableBody.innerHTML = visibleBooks.length
+    ? visibleBooks.map(renderBookRow).join("")
     : `<tr><td colspan="11" class="empty-table">No books found.</td></tr>`;
+  paginationMount.innerHTML = renderPaginationControls(pagination, books.length);
 }
 
 function getFilteredBooks() {
-  const books = [...getState().books].filter((book) => {
-    const searchTarget = `${book.title || ""} ${book.callNumber || ""}`.toLowerCase();
-    const matchesSearch = !pageState.search || searchTarget.includes(pageState.search);
-    const matchesCategory = !pageState.category || book.category === pageState.category;
-    const matchesLocation = !pageState.location || book.location === pageState.location;
-    return matchesSearch && matchesCategory && matchesLocation;
-  });
-
-  return sortBooks(books);
-}
-
-function sortBooks(books) {
-  const sortedBooks = [...books];
-
-  if (pageState.arrangement === "alpha") {
-    return sortedBooks.sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
-  }
-
-  if (pageState.arrangement === "oldest") {
-    return sortedBooks.sort((a, b) => getPublicationYear(a) - getPublicationYear(b));
-  }
-
-  if (pageState.arrangement === "newest") {
-    return sortedBooks.sort((a, b) => getPublicationYear(b) - getPublicationYear(a));
-  }
-
-  return sortedBooks.sort((a, b) => getLatestRecordDate(b) - getLatestRecordDate(a));
+  return sortBooks(filterBooks([...getState().books], pageState), pageState.arrangement);
 }
 
 function renderBookRow(book) {
   return `
     <tr>
-      <td><strong>${display(book.title)}</strong></td>
+      <td><strong>${renderBookTitle(book)}</strong></td>
       <td>${display(book.responsibility)}</td>
       <td>${display(book.publisher)}</td>
       <td>${display(book.publicationDate)}</td>
@@ -182,15 +182,30 @@ function renderBookRow(book) {
       <td>${display(book.location)}</td>
       <td>${display(book.category)}</td>
       <td>${display(book.onShelf)}</td>
-      <td>${display(book.editedAt || book.addedAt)}</td>
+      <td>${display(formatDateForDisplay(book.editedAt || book.addedAt))}</td>
       <td>
         <div class="row-actions">
           <button class="secondary-button compact-button" type="button" data-edit-book data-book-id="${escapeHtml(book.id)}">Edit</button>
-          <button class="delete-button" type="button" data-delete-book data-book-id="${escapeHtml(book.id)}" aria-label="Delete ${escapeHtml(book.title)}">x</button>
+          <button class="danger-button compact-button" type="button" data-archive-book data-book-id="${escapeHtml(book.id)}" aria-label="Archive ${escapeHtml(book.title)}">Archive</button>
         </div>
       </td>
     </tr>
   `;
+}
+
+function openArchiveBookModal(bookId) {
+  const book = getState().books.find((item) => item.id === bookId);
+  if (!book) {
+    return;
+  }
+
+  openConfirmationModal({
+    title: "Archive Book",
+    heading: "Archive this book?",
+    message: `${book.title || "This book"} will move out of the active Book List and into Book Archive with all details preserved.`,
+    confirmLabel: "Archive",
+    onConfirm: () => archiveBook(bookId)
+  });
 }
 
 function openEditBookModal(bookId) {
@@ -203,12 +218,12 @@ function openEditBookModal(bookId) {
     title: "Edit Book",
     size: "large",
     content: `
-      <form id="editBookForm" class="data-form modal-form">
+      <form id="editBookForm" class="data-form modal-form" novalidate>
         ${bookFieldGroups.map((group, index) => `
           <section class="form-section modal-form-section" aria-labelledby="editGroup${index}">
             <h3 id="editGroup${index}">${group.title}</h3>
             <div class="form-grid">
-              ${group.fields.map((field) => renderEditField(field, book)).join("")}
+              ${group.fields.map((field) => renderBookField(field.label, field.name, field.type || "text", Boolean(field.required), book[field.name] ?? "", "edit-", { placeholder: field.placeholder })).join("")}
             </div>
           </section>
         `).join("")}
@@ -216,14 +231,14 @@ function openEditBookModal(bookId) {
         <div class="choice-block">
           <span class="choice-label">Library/Location</span>
           <div class="choice-group" role="radiogroup" aria-label="Edit library location">
-            ${locationOptions.map((option) => renderChoice("location", option, book.location === option, "oval-choice")).join("")}
+            ${locationOptions.map((option, index) => renderBookChoice("location", option, book.location ? book.location === option : index === 0, "oval-choice", "edit-")).join("")}
           </div>
         </div>
 
         <div class="choice-block">
           <span class="choice-label">Categories</span>
           <div class="choice-group category-choice-group" role="radiogroup" aria-label="Edit book category">
-            ${categoryOptions.map((option) => renderChoice("category", option, book.category === option, "pill-choice")).join("")}
+            ${categoryOptions.map((option, index) => renderBookChoice("category", option, book.category ? book.category === option : index === 0, "pill-choice", "edit-")).join("")}
           </div>
         </div>
 
@@ -235,8 +250,17 @@ function openEditBookModal(bookId) {
     `
   });
 
-  modal.root.querySelector("#editBookForm").addEventListener("submit", async (event) => {
+  const editForm = modal.root.querySelector("#editBookForm");
+  setupEnterToAdvance(editForm, "button.modal-submit");
+  setupBookFormValidation(editForm);
+
+  editForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+
+    if (!validateBookForm(editForm)) {
+      return;
+    }
+
     const formData = new FormData(event.currentTarget);
 
     await updateBook(bookId, {
@@ -246,46 +270,27 @@ function openEditBookModal(bookId) {
       place: String(formData.get("place") || ""),
       publisher: String(formData.get("publisher") || ""),
       publicationDate: String(formData.get("publicationDate") || ""),
-      extent: String(formData.get("extent") || ""),
+      height: String(formData.get("height") || ""),
+      width: String(formData.get("width") || ""),
       isbn: String(formData.get("isbn") || ""),
       url: String(formData.get("url") || ""),
       callNumber: String(formData.get("callNumber") || ""),
       accession: String(formData.get("accession") || ""),
       language: String(formData.get("language") || ""),
       enteredBy: String(formData.get("enteredBy") || ""),
-      dateEntered: String(formData.get("dateEntered") || ""),
       updatedBy: String(formData.get("updatedBy") || ""),
-      dateUpdated: String(formData.get("dateUpdated") || ""),
       volumeCopy: String(formData.get("volumeCopy") || ""),
+      edition: String(formData.get("edition") || ""),
+      pages: String(formData.get("pages") || ""),
       onShelf: Number(formData.get("onShelf") || 0),
       recordId: String(formData.get("recordId") || ""),
       location: String(formData.get("location") || book.location || ""),
       category: String(formData.get("category") || book.category || ""),
-      editedAt: new Date().toISOString().slice(0, 10)
+      editedAt: new Date().toISOString()
     });
 
     modal.close();
   });
-}
-
-function renderEditField(field, book) {
-  const type = field.type || "text";
-  return `
-    <div class="field-group">
-      <label for="edit-${field.name}">${field.label}</label>
-      <input id="edit-${field.name}" name="${field.name}" type="${type}" value="${escapeHtml(book[field.name] || "")}" ${field.required ? "required" : ""}>
-    </div>
-  `;
-}
-
-function renderChoice(name, value, checked, className) {
-  const id = `edit-${name}-${value.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-  return `
-    <label class="${className}">
-      <input type="radio" name="${name}" id="${id}" value="${escapeHtml(value)}" ${checked ? "checked" : ""}>
-      <span>${escapeHtml(value)}</span>
-    </label>
-  `;
 }
 
 function display(value) {
@@ -296,15 +301,8 @@ function display(value) {
   return escapeHtml(value);
 }
 
-function getPublicationYear(book) {
-  const rawYear = String(book.publicationDate || "").slice(0, 4);
-  const year = Number(rawYear);
-  return Number.isFinite(year) ? year : 0;
-}
-
-function getLatestRecordDate(book) {
-  const date = new Date(book.editedAt || book.addedAt || 0);
-  return Number.isNaN(date.getTime()) ? new Date(0) : date;
+function resetCurrentPage() {
+  pageState.currentPage = 1;
 }
 
 function debounce(callback, wait) {

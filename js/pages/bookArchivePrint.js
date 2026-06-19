@@ -1,9 +1,9 @@
 import { getState, initStore } from "../state/store.js";
-import { filterBooks, sortBooks } from "../utils/bookFilters.js";
+import { filterBooks, formatDateForDisplay, sortBooks } from "../utils/bookFilters.js";
 import { renderBookTitle } from "../utils/bookDisplay.js";
 import { escapeHtml } from "../utils/html.js";
 
-const tableBody = document.getElementById("printBookTableBody");
+const tableBody = document.getElementById("printArchiveTableBody");
 
 document.getElementById("generatedDate").textContent = `Generated ${new Date().toLocaleString()}`;
 
@@ -20,14 +20,18 @@ const printState = {
 };
 
 async function init() {
-  tableBody.innerHTML = `<tr><td colspan="9" class="empty-table">Loading books...</td></tr>`;
+  tableBody.innerHTML = `<tr><td colspan="10" class="empty-table">Loading archived books...</td></tr>`;
   await initStore();
 
-  const books = sortBooks(filterBooks([...getState().books], printState), printState.arrangement);
+  const archivedBooks = sortBooks(
+    filterBooks([...getState().archivedBooks], printState),
+    printState.arrangement,
+    { dateMode: "archived" }
+  );
 
-  tableBody.innerHTML = books.length
-    ? books.map(renderPrintRow).join("")
-    : `<tr><td colspan="9" class="empty-table">No books found.</td></tr>`;
+  tableBody.innerHTML = archivedBooks.length
+    ? archivedBooks.map(renderPrintRow).join("")
+    : `<tr><td colspan="10" class="empty-table">No archived books found.</td></tr>`;
 }
 
 function renderPrintRow(book) {
@@ -42,6 +46,7 @@ function renderPrintRow(book) {
       <td>${display(book.location)}</td>
       <td>${display(book.category)}</td>
       <td>${display(book.onShelf)}</td>
+      <td>${display(formatDateForDisplay(book.archivedAt))}</td>
     </tr>
   `;
 }

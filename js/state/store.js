@@ -1,4 +1,4 @@
-import { fetchBooks, saveBook, editBook, removeBook,
+import { fetchBooks, saveBook, editBook, archiveBookRecord, restoreBookRecord, removeBook,
          fetchLendings, saveLending, updateLendingStatus, removeLending,
          fetchNotifications, saveNotification, markAllNotificationsRead,
          subscribeToBooks, subscribeToLendings, subscribeToNotifications
@@ -7,6 +7,7 @@ import { categoryOptions, locationOptions } from "../utils/bookOptions.js";
 
 const state = {
   books: [],
+  archivedBooks: [],
   notifications: [],
   borrowRecords: [],
   dashboardStats: {}
@@ -14,12 +15,16 @@ const state = {
 
 const listeners = new Set();
 const NOTIFICATION_LIMIT = 10;
+const READ_NOTIFICATION_IDS_KEY = "ows-library-read-notification-ids";
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-let realtimeStarted = false;
 
-export async function initStore() {
-  setState({ books: [], borrowRecords: [], notifications: [] });
-  return new Promise((resolve) => {
+let storeInitialized = false;
+let storeReadyPromise = null;
+
+export function initStore() {
+  if (storeReadyPromise) return storeReadyPromise;
+
+  storeReadyPromise = new Promise((resolve) => {
     let booksReady = false;
     let lendingsReady = false;
 
@@ -27,8 +32,8 @@ export async function initStore() {
       if (booksReady && lendingsReady) resolve();
     };
 
-    subscribeToBooks((books) => {
-      setState({ books });
+    subscribeToBooks((allBooks) => {
+      setState(splitBooksByArchiveState(allBooks));
       if (!booksReady) { booksReady = true; checkReady(); }
     });
 
@@ -39,6 +44,8 @@ export async function initStore() {
 
     subscribeToNotifications((notifications) => setState({ notifications }));
   });
+
+  return storeReadyPromise;
 }
 
 export function getState() {
@@ -55,16 +62,28 @@ export function setState(updater) {
   if (updates.notifications) {
     updates.notifications = normalizeNotifications(updates.notifications);
   }
+  const booksChanged = updates.books !== undefined;
   Object.assign(state, updates);
-  state.dashboardStats = buildDashboardStats(state.books);
+  if (booksChanged || updates.borrowRecords !== undefined) {
+    state.dashboardStats = buildDashboardStats(state.books, state.borrowRecords);
+  }
   listeners.forEach((listener) => listener(state));
 }
 
 export async function markNotificationsRead() {
-  await markAllNotificationsRead();
+  persistReadNotifications(state.notifications);
   setState((currentState) => ({
     notifications: currentState.notifications.map((n) => ({ ...n, read: true }))
   }));
+
+  try {
+    await markAllNotificationsRead();
+    setState((currentState) => ({
+      notifications: currentState.notifications.map((n) => ({ ...n, read: true }))
+    }));
+  } catch (error) {
+    console.error("Unable to sync notification read state.", error);
+  }
 }
 
 export async function addBook(bookData) {
@@ -81,6 +100,7 @@ export async function addBook(bookData) {
 }
 
 export async function updateBook(bookId, bookData) {
+  bookData.addedAt = new Date().toISOString();
   await editBook(bookId, bookData);
   const notification = await createNotification("updated", "Book edited", `${bookData.title || "A book"} details were updated.`);
   let updatedBook;
@@ -98,12 +118,56 @@ export async function updateBook(bookId, bookData) {
   return updatedBook;
 }
 
-export async function deleteBook(bookId) {
+export async function archiveBook(bookId) {
   const book = state.books.find((item) => item.id === bookId);
+  if (!book) {
+    return;
+  }
+
+  const archivedAt = new Date().toISOString();
+  await archiveBookRecord(bookId, archivedAt);
+  const notification = await createNotification("updated", "Book archived", `${book.title || "A book"} was moved to the book archive.`);
+  const archivedBook = { ...book, archived: true, archivedAt };
+
+  setState((currentState) => ({
+    books: currentState.books.filter((item) => item.id !== bookId),
+    archivedBooks: [archivedBook, ...currentState.archivedBooks.filter((item) => item.id !== bookId)],
+    notifications: limitNotifications([
+      notification,
+      ...currentState.notifications
+    ])
+  }));
+}
+
+export async function restoreBook(bookId) {
+  const book = state.archivedBooks.find((item) => item.id === bookId);
+  if (!book) {
+    return;
+  }
+
+  const restoredAt = new Date().toISOString();
+  await restoreBookRecord(bookId, restoredAt);
+  const notification = await createNotification("updated", "Book restored", `${book.title || "A book"} was restored to the active catalog.`);
+  const restoredBook = { ...book, archived: false, restoredAt };
+
+  setState((currentState) => ({
+    books: [restoredBook, ...currentState.books.filter((item) => item.id !== bookId)],
+    archivedBooks: currentState.archivedBooks.filter((item) => item.id !== bookId),
+    notifications: limitNotifications([
+      notification,
+      ...currentState.notifications
+    ])
+  }));
+}
+
+export async function deleteBook(bookId) {
+  const book = state.books.find((item) => item.id === bookId)
+    || state.archivedBooks.find((item) => item.id === bookId);
   await removeBook(bookId);
   const notification = await createNotification("deleted", "Book deleted", `${book?.title || "A book"} was removed from the catalog.`);
   setState((currentState) => ({
     books: currentState.books.filter((item) => item.id !== bookId),
+    archivedBooks: currentState.archivedBooks.filter((item) => item.id !== bookId),
     notifications: limitNotifications([
       notification,
       ...currentState.notifications
@@ -125,7 +189,6 @@ export async function addBorrowRecord(recordData) {
   const record = await saveLending(recordData);
   const notification = await createNotification("borrowed", "Book borrowed", `${record.borrowerName} borrowed ${record.books?.length ?? 1} book record(s).`);
   setState((currentState) => ({
-    borrowRecords: [record, ...currentState.borrowRecords],
     notifications: limitNotifications([
       notification,
       ...currentState.notifications
@@ -187,6 +250,18 @@ async function createNotification(type, title, message) {
   });
 }
 
+function splitBooksByArchiveState(books) {
+  return books.reduce((result, book) => {
+    const bookCopy = { ...book };
+    if (bookCopy.archived) {
+      result.archivedBooks.push(bookCopy);
+    } else {
+      result.books.push(bookCopy);
+    }
+    return result;
+  }, { books: [], archivedBooks: [] });
+}
+
 function countByOptions(items, key, validOptions) {
   const totals = Object.fromEntries(validOptions.map((option) => [option, 0]));
   items.forEach((item) => {
@@ -203,7 +278,14 @@ function limitNotifications(notifications) {
 }
 
 function normalizeNotifications(notifications) {
-  return limitNotifications(notifications.map((notification) => ({ ...notification })));
+  const readNotificationIds = getPersistedReadNotificationIds();
+  return limitNotifications(notifications.map((notification) => {
+    const notificationId = getNotificationIdentity(notification);
+    return {
+      ...notification,
+      read: Boolean(notification.read || (notificationId && readNotificationIds.has(notificationId)))
+    };
+  }));
 }
 
 function parseDate(value) {
@@ -212,13 +294,33 @@ function parseDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function startRealtimeSubscriptions() {
-  if (realtimeStarted) {
-    return;
-  }
+function persistReadNotifications(notifications) {
+  const readNotificationIds = getPersistedReadNotificationIds();
+  notifications.forEach((notification) => {
+    const notificationId = getNotificationIdentity(notification);
+    if (notificationId) {
+      readNotificationIds.add(notificationId);
+    }
+  });
+  savePersistedReadNotificationIds(readNotificationIds);
+}
 
-  realtimeStarted = true;
-  subscribeToBooks((books) => setState({ books }));
-  subscribeToLendings((borrowRecords) => setState({ borrowRecords }));
-  subscribeToNotifications((notifications) => setState({ notifications }));
+function getNotificationIdentity(notification) {
+  return String(notification.id || notification.createdAtValue || notification.createdAt || "");
+}
+
+function getPersistedReadNotificationIds() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(READ_NOTIFICATION_IDS_KEY) || "[]"));
+  } catch (error) {
+    return new Set();
+  }
+}
+
+function savePersistedReadNotificationIds(readNotificationIds) {
+  try {
+    localStorage.setItem(READ_NOTIFICATION_IDS_KEY, JSON.stringify([...readNotificationIds].slice(-500)));
+  } catch (error) {
+    // Ignore storage errors so notification rendering can continue.
+  }
 }

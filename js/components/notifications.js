@@ -10,25 +10,29 @@ export function renderNotifications(mount) {
     const hasUnread = notifications.some((notification) => !notification.read);
 
     mount.innerHTML = `
-      <button id="notificationButton" class="utility-button" type="button" aria-label="Open notifications" aria-expanded="${isDropdownOpen}">
-        <img src="../assets/bell.png" alt="" class="utility-icon">
-        ${hasUnread ? '<span class="unread-dot" aria-hidden="true"></span>' : ""}
-      </button>
-      <section id="notificationDropdown" class="dropdown ${isDropdownOpen ? "is-open" : ""}" aria-label="Notifications">
-        <div class="dropdown-header">
-          <h2>Notifications</h2>
-          <span>${notifications.length}</span>
+      <div class="notification-actions">
+        <button id="notificationButton" class="utility-button" type="button" aria-label="Open notifications" aria-expanded="${isDropdownOpen}">
+          <img src="../assets/bell.png" alt="" class="utility-icon">
+          ${hasUnread ? '<span class="unread-dot" aria-hidden="true"></span>' : ""}
+        </button>
+        <section id="notificationDropdown" class="dropdown ${isDropdownOpen ? "is-open" : ""}" aria-label="Notifications">
+          <div class="dropdown-header">
+            <h2>Notifications</h2>
+            <a class="utility-button notification-print-button" href="notification-print.html" aria-label="Print notifications" title="Print notifications">
+              <img src="../assets/print.png" alt="" class="utility-icon">
+            </a>
+          </div>
+          <div class="notification-list">
+            ${notifications.length ? notifications.map((notification) => `
+              <article class="notification-item ${notification.read ? "" : "is-unread"}">
+                <div class="notification-title">${escapeHtml(notification.title)}</div>
+                <div class="notification-message">${escapeHtml(notification.message)}</div>
+                <div class="notification-time">${escapeHtml(notification.createdAt)}</div>
+              </article>
+            `).join("") : '<div class="notification-empty">No notifications yet.</div>'}
+          </div>
+        </section>
         </div>
-        <div class="notification-list">
-          ${notifications.length ? notifications.map((notification) => `
-            <article class="notification-item ${notification.read ? "" : "is-unread"}">
-              <div class="notification-title">${escapeHtml(notification.title)}</div>
-              <div class="notification-message">${escapeHtml(notification.message)}</div>
-              <div class="notification-time">${escapeHtml(notification.createdAt)}</div>
-            </article>
-          `).join("") : '<div class="notification-empty">No notifications yet.</div>'}
-        </div>
-      </section>
     `;
 
     mount.querySelector("#notificationButton").addEventListener("click", (event) => {
@@ -54,7 +58,7 @@ export function renderNotifications(mount) {
   update();
   subscribe(update);
 
-  document.addEventListener("click", (event) => {
+  const handleOutsideClick = (event) => {
     if (isDropdownOpen && !mount.contains(event.target)) {
       isDropdownOpen = false;
       if (hasViewedOpenPanel) {
@@ -64,5 +68,8 @@ export function renderNotifications(mount) {
       }
       update();
     }
-  });
+  };
+
+  document.removeEventListener("click", handleOutsideClick);
+  document.addEventListener("click", handleOutsideClick);
 }
